@@ -1,0 +1,827 @@
+<!doctype html>
+<html lang="zh-Hant">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>24小時飲食回憶法｜營養評估增能講座｜報名</title>
+
+  <!-- Tailwind CDN -->
+  <script src="https://cdn.tailwindcss.com"></script>
+
+  <!-- Font -->
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+TC:wght@400;600;700;800&display=swap" rel="stylesheet">
+
+  <style>
+    html, body { font-family: "Noto Sans TC", system-ui, -apple-system, "Segoe UI", Roboto, Arial, "PingFang TC", "Microsoft JhengHei", sans-serif; }
+    .animate-fade-in { animation: fadeIn .25s ease-out; }
+    @keyframes fadeIn { from{opacity:0; transform: translateY(6px)} to{opacity:1; transform: translateY(0)} }
+  </style>
+</head>
+
+<body class="bg-gray-50 text-gray-800">
+  <div id="app"></div>
+
+  <script>
+    /***********************
+     * Constants
+     ***********************/
+    const SUBMIT_URL = "https://script.google.com/macros/s/AKfycbw9vbRh9V8fxFsrTSBJMiK0jWLdUg1iwPZ1taBUHYkR9eYFiOa6iAtyLS6CxABoMtKF/exec";
+
+    // 固定首頁圖片檔名（請把檔案放在 index.html 同一資料夾）
+    const FLYER_IMAGE_SRC = "1150124_24小時飲食回憶法.jpg";
+
+    const CITIES = [
+      "基隆市","臺北市","新北市","桃園市","新竹市","新竹縣","苗栗縣","臺中市",
+      "彰化縣","南投縣","雲林縣","嘉義市","嘉義縣","臺南市","高雄市","屏東縣",
+      "宜蘭縣","花蓮縣","臺東縣","澎湖縣","金門縣","連江縣"
+    ];
+
+    const WORK_TYPES = [
+      { id: 'clinical', label: '臨床營養' },
+      { id: 'group', label: '團膳管理' },
+      { id: 'community', label: '社區營養' },
+      { id: 'research', label: '學術研究' },
+      { id: 'other', label: '其他' }
+    ];
+
+    const INFO_SOURCES = [
+      "公會電子報/網站",
+      "醫院佈告欄/郵件",
+      "同事/朋友推薦",
+      "Facebook/社群媒體",
+      "國民營養調查團隊LINE@ (請務必填寫)",
+      "其他"
+    ];
+
+    const AGENDA = [
+      { time: "12:30~12:50", content: "報到", speaker: "" },
+      { time: "12:50~13:00", content: "前測及說明", speaker: "" },
+      {
+        time: "13:00~14:40 (100 分鐘)",
+        content: "24小時回憶法簡介：方法介紹、搭配工具、資料轉換飲食攝取、如何增進正確飲食評估精準度",
+        speaker: "台北醫學大學 潘文涵講座教授"
+      },
+      { time: "14:40~14:50", content: "中場休息", speaker: "" },
+      {
+        time: "14:50~16:30 (100 分鐘)",
+        content: "國民營養調查工作模式分享：訪談者引領技巧、食物模型使用、烹調製作詢問、外食如何評估",
+        speaker: "國民營養調查團隊 葉乃華博士"
+      },
+      { time: "16:30~16:50", content: "後測", speaker: "" },
+      { time: "16:50~17:10", content: "Q&A", speaker: "" }
+    ];
+
+    /***********************
+     * State
+     ***********************/
+    let state = {
+      currentStep: 0, // 0=Landing, 1-4=Form, 5=Success
+      showId: false,
+      timestamp: '',
+      isLoading: false,
+      submitError: null,
+      errors: {},
+      formData: {
+        name: '',
+        gender: '',
+        email: '',
+        infoSource: '',
+        idNumber: '',
+        isMember: '',
+        city: '',
+        classType: '',
+        workExperience: [],
+        workplace: '',
+        participated2016NutriSurvey: '',
+        consent: false
+      }
+    };
+
+    /***********************
+     * Utilities
+     ***********************/
+    const $ = (sel, root=document) => root.querySelector(sel);
+
+    function setState(patch) {
+      state = { ...state, ...patch };
+      render();
+    }
+
+    function scrollTop() { window.scrollTo({ top: 0, behavior: "smooth" }); }
+
+    function escapeHtml(str) {
+      return String(str ?? '').replace(/[&<>"']/g, (m) => ({
+        '&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'
+      }[m]));
+    }
+
+    /***********************
+     * Taiwan ID validation
+     ***********************/
+    function verifyTaiwanId(id) {
+      if (!id) return false;
+      id = id.trim().toUpperCase();
+      if (!/^[A-Z][1-2]\d{8}$/.test(id)) return false;
+
+      const letterMap = {
+        A:10, B:11, C:12, D:13, E:14, F:15, G:16, H:17, I:34, J:18, K:19,
+        L:20, M:21, N:22, O:35, P:23, Q:24, R:25, S:26, T:27, U:28, V:29,
+        W:32, X:30, Y:31, Z:33
+      };
+      const weights = [1,9,8,7,6,5,4,3,2,1,1];
+      const mapped = letterMap[id[0]];
+      if (!mapped) return false;
+
+      const fullId = String(mapped) + id.substring(1);
+      if (fullId.length !== 11) return false;
+
+      let sum = 0;
+      for (let i = 0; i < 11; i++) sum += parseInt(fullId[i], 10) * weights[i];
+      return sum % 10 === 0;
+    }
+
+    /***********************
+     * Validation by step
+     ***********************/
+    function validateStep(step) {
+      const fd = state.formData;
+      const newErrors = {};
+
+      if (step === 1) {
+        if (!fd.name || fd.name.length < 2) newErrors.name = '請輸入真實姓名';
+        if (!fd.gender) newErrors.gender = '請選擇性別';
+        if (!fd.email || !/^\S+@\S+\.\S+$/.test(fd.email)) newErrors.email = '請輸入有效 Email';
+        if (!fd.infoSource) newErrors.infoSource = '請選擇訊息來源';
+      }
+      if (step === 2) {
+        if (!verifyTaiwanId(fd.idNumber)) newErrors.idNumber = '身分證字號格式錯誤 (學分登錄用)';
+        if (!fd.isMember) newErrors.isMember = '請選擇會員身份';
+        if (!fd.city) newErrors.city = '請選擇居住縣市';
+      }
+      if (step === 3) {
+        if (!fd.classType) newErrors.classType = '請選擇上課方式';
+        if (!fd.workExperience || fd.workExperience.length === 0) newErrors.workExperience = '請至少勾選一項經驗';
+        if (!fd.workplace) newErrors.workplace = '請填寫執業場所';
+        if (!fd.participated2016NutriSurvey) newErrors.participated2016NutriSurvey = '請選擇是否曾參與調查';
+      }
+      if (step === 4) {
+        if (!fd.consent) newErrors.consent = '您必須勾選確認所有資訊無誤才能送出';
+      }
+
+      state.errors = newErrors;
+      render();
+      return Object.keys(newErrors).length === 0;
+    }
+
+    function nextStep() {
+      if (!validateStep(state.currentStep)) return;
+      setState({ currentStep: state.currentStep + 1, submitError: null });
+      scrollTop();
+    }
+
+    function prevStep() {
+      setState({ currentStep: state.currentStep - 1, submitError: null });
+      scrollTop();
+    }
+
+    /***********************
+     * Submit
+     ***********************/
+    async function handleSubmit() {
+      if (!validateStep(4)) return;
+
+      if (!SUBMIT_URL || SUBMIT_URL.includes("YOUR_DEPLOYED")) {
+        setState({ submitError: "錯誤：請先設定 Apps Script 部署網址。"});
+        return;
+      }
+
+      setState({ isLoading: true, submitError: null });
+
+      try {
+        await fetch(SUBMIT_URL, {
+          method: "POST",
+          mode: "no-cors",
+          cache: "no-cache",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            ...state.formData,
+            timestamp: state.timestamp
+          }),
+        });
+
+        setState({ currentStep: 5 });
+        scrollTop();
+      } catch (err) {
+        console.error(err);
+        setState({ submitError: "報名送出失敗，請檢查網路連線或 Apps Script 部署狀態。", isLoading: false });
+        return;
+      } finally {
+        setState({ isLoading: false });
+      }
+    }
+
+    /***********************
+     * Event Handlers
+     ***********************/
+    function onClick(e) {
+      const t = e.target.closest("[data-action]");
+      if (!t) return;
+
+      const action = t.getAttribute("data-action");
+
+      if (action === "goForm") { setState({ currentStep: 1 }); scrollTop(); }
+      if (action === "goLanding") { setState({ currentStep: 0, submitError: null }); scrollTop(); }
+      if (action === "next") nextStep();
+      if (action === "prev") prevStep();
+      if (action === "toggleId") setState({ showId: !state.showId });
+      if (action === "submit") handleSubmit();
+      if (action === "reload") window.location.reload();
+    }
+
+    function onInput(e) {
+      const el = e.target;
+      const name = el.getAttribute("name");
+      if (!name) return;
+
+      // clear single field error when user edits
+      if (state.errors[name]) {
+        const nextErr = { ...state.errors };
+        delete nextErr[name];
+        state.errors = nextErr;
+      }
+
+      if (el.type === "checkbox" && name === "consent") {
+        state.formData.consent = el.checked;
+        render();
+        return;
+      }
+
+      if (name === "idNumber") {
+        state.formData.idNumber = el.value.toUpperCase();
+        render();
+        return;
+      }
+
+      state.formData[name] = el.value;
+      render();
+    }
+
+    function onChange(e) {
+      const el = e.target;
+
+      // workExperience multi checkbox
+      if (el.name === "workExperience") {
+        const v = el.value;
+        const arr = new Set(state.formData.workExperience || []);
+        if (el.checked) arr.add(v);
+        else arr.delete(v);
+        state.formData.workExperience = Array.from(arr);
+
+        if (state.formData.workExperience.length > 0 && state.errors.workExperience) {
+          const nextErr = { ...state.errors };
+          delete nextErr.workExperience;
+          state.errors = nextErr;
+        }
+
+        render();
+        return;
+      }
+    }
+
+    /***********************
+     * UI Pieces
+     ***********************/
+    function iconSvg(name, cls="w-6 h-6") {
+      const common = `class="${cls}" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"`;
+      switch(name) {
+        case "chevronRight": return `<svg ${common} viewBox="0 0 24 24"><path d="M9 18l6-6-6-6" /></svg>`;
+        case "chevronLeft": return `<svg ${common} viewBox="0 0 24 24"><path d="M15 18l-6-6 6-6" /></svg>`;
+        case "check": return `<svg ${common} viewBox="0 0 24 24"><path d="M20 6L9 17l-5-5" /></svg>`;
+        case "clock": return `<svg ${common} viewBox="0 0 24 24"><circle cx="12" cy="12" r="10"/><path d="M12 6v6l4 2"/></svg>`;
+        case "mapPin": return `<svg ${common} viewBox="0 0 24 24"><path d="M21 10c0 7-9 13-9 13S3 17 3 10a9 9 0 1 1 18 0Z"/><circle cx="12" cy="10" r="3"/></svg>`;
+        case "users": return `<svg ${common} viewBox="0 0 24 24"><path d="M17 21v-2a4 4 0 0 0-4-4H7a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg>`;
+        case "monitor": return `<svg ${common} viewBox="0 0 24 24"><rect x="2" y="3" width="20" height="14" rx="2"/><path d="M8 21h8"/><path d="M12 17v4"/></svg>`;
+        case "alert": return `<svg ${common} viewBox="0 0 24 24"><circle cx="12" cy="12" r="10"/><path d="M12 8v4"/><path d="M12 16h.01"/></svg>`;
+        case "book": return `<svg ${common} viewBox="0 0 24 24"><path d="M3 5a2 2 0 0 1 2-2h13v16H5a2 2 0 0 1-2-2V5z"/><path d="M7 7h8"/></svg>`;
+        case "eye": return `<svg ${common} viewBox="0 0 24 24"><path d="M2 12s3-7 10-7 10 7 10 7-3 7-10 7S2 12 2 12z"/><circle cx="12" cy="12" r="3"/></svg>`;
+        case "eyeOff": return `<svg ${common} viewBox="0 0 24 24"><path d="M17.94 17.94A10.07 10.07 0 0 1 12 19c-7 0-10-7-10-7a18.35 18.35 0 0 1 3.3-4.79"/><path d="M1 1l22 22"/></svg>`;
+        case "loader": return `<svg class="${cls} animate-spin" viewBox="0 0 24 24" fill="none"><circle cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4" opacity="0.25"/><path d="M22 12a10 10 0 0 0-10-10" stroke="currentColor" stroke-width="4" stroke-linecap="round"/></svg>`;
+        case "shield": return `<svg ${common} viewBox="0 0 24 24"><path d="M12 2l7 3v6c0 5-3.58 9.74-7 11-3.42-1.26-7-6-7-11V5l7-3z"/><path d="M9 12l2 2 4-4"/></svg>`;
+        default: return "";
+      }
+    }
+
+    function errorLine(field) {
+      const msg = state.errors[field];
+      if (!msg) return "";
+      return `
+        <div class="flex items-center mt-2 text-red-500 text-sm font-medium animate-pulse">
+          <span class="mr-1.5 text-red-500">${iconSvg("alert","w-4 h-4")}</span>
+          ${escapeHtml(msg)}
+        </div>
+      `;
+    }
+
+    function stepWizardHtml(currentStep, totalSteps) {
+      const labels = ["基本資料","學分身分","課程背景","確認送出"];
+      let dots = "";
+      for (let i=1;i<=totalSteps;i++) {
+        const done = i < currentStep;
+        const active = i <= currentStep;
+        dots += `
+          <div class="relative">
+            <div class="flex items-center justify-center w-10 h-10 rounded-full border-2 text-sm font-bold transition-all duration-300 z-10 relative
+              ${active ? 'bg-emerald-600 border-emerald-600 text-white shadow-md scale-110' : 'bg-white border-gray-300 text-gray-400'}">
+              ${done ? iconSvg("check","w-5 h-5") : i}
+            </div>
+            <div class="absolute -bottom-6 left-1/2 -translate-x-1/2 text-xs font-medium text-gray-500 w-20 text-center">
+              ${labels[i-1]}
+            </div>
+          </div>
+        `;
+        if (i < totalSteps) {
+          dots += `<div class="flex-1 h-1 mx-2 rounded transition-colors duration-500 ${i < currentStep ? 'bg-emerald-600' : 'bg-gray-200'}"></div>`;
+        }
+      }
+      return `<div class="flex items-center justify-center mb-8 px-4 w-full max-w-md mx-auto">${dots}</div>`;
+    }
+
+    /***********************
+     * Views
+     ***********************/
+    function landingView() {
+      const fixedFlyer = `
+        <img
+          src="${FLYER_IMAGE_SRC}"
+          alt="講座簡章"
+          class="w-full h-full object-contain"
+          onerror="this.onerror=null; this.src='data:image/svg+xml;utf8,<svg xmlns=%22http://www.w3.org/2000/svg%22 width=%22600%22 height=%22800%22><rect width=%22100%25%22 height=%22100%25%22 fill=%22%23ddd%22/><text x=%2230%25%22 y=%2250%25%22 font-size=%2220%22 fill=%22%23666%22>Missing Image</text></svg>'"
+        />
+      `;
+
+      const agendaRows = AGENDA.map(item => {
+        const parts = item.content.split('：');
+        const title = parts[0];
+        const sub = parts.length>1 ? `<p class="text-sm text-gray-500 mt-1 font-normal">${escapeHtml(parts.slice(1).join('：'))}</p>` : "";
+        return `
+          <tr class="hover:bg-gray-50 transition">
+            <td class="p-4 text-gray-600 font-mono text-sm whitespace-nowrap">${escapeHtml(item.time)}</td>
+            <td class="p-4 text-gray-800 font-medium">${escapeHtml(title)}${sub}</td>
+            <td class="p-4 text-gray-600 text-sm whitespace-pre-line">${escapeHtml(item.speaker)}</td>
+          </tr>
+        `;
+      }).join("");
+
+      return `
+        <div class="min-h-screen bg-gray-50">
+          <div class="w-full bg-emerald-900 text-white shadow-xl relative overflow-hidden">
+            <div class="max-w-5xl mx-auto px-4 py-12 md:py-20 relative z-10">
+              <div class="flex flex-col md:flex-row items-center gap-8">
+                <div class="flex-1 text-center md:text-left">
+                  <div class="inline-block bg-yellow-400 text-emerald-950 px-4 py-1 rounded-full text-sm font-bold mb-4 shadow-sm tracking-wider">
+                    開放報名中
+                  </div>
+                  <h1 class="text-3xl md:text-5xl font-bold mb-4 leading-tight">
+                    24小時飲食回憶法<br/><span class="text-emerald-300">營養評估增能講座</span>
+                  </h1>
+                  <p class="text-lg md:text-xl text-emerald-100 font-light mb-8 max-w-xl">
+                    精準掌握營養評估訪談技巧，國民營養調查團隊親授，實體與線上同步開課。
+                  </p>
+                  <button data-action="goForm"
+                    class="bg-white text-emerald-900 text-lg font-bold py-4 px-10 rounded-full shadow-lg hover:bg-emerald-50 hover:scale-105 transition transform flex items-center justify-center">
+                    立即報名參加 <span class="ml-2">${iconSvg("chevronRight","w-5 h-5")}</span>
+                  </button>
+                </div>
+
+                <!-- 固定圖片框（不再可上傳） -->
+                <div class="w-full md:w-1/3 flex-shrink-0">
+                  <div class="bg-white/10 backdrop-blur-sm border-2 border-white/20 rounded-xl p-2 relative overflow-hidden">
+                    <div class="aspect-[3/4] bg-emerald-800/50 rounded-lg flex items-center justify-center overflow-hidden relative">
+                      ${fixedFlyer}
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </div>
+            <div class="absolute top-0 right-0 w-64 h-64 bg-emerald-500 rounded-full mix-blend-multiply filter blur-3xl opacity-20 transform translate-x-1/2 -translate-y-1/2"></div>
+          </div>
+
+          <div class="max-w-5xl mx-auto px-4 -mt-10 relative z-20">
+            <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
+              <div class="bg-white p-6 rounded-xl shadow-lg border-t-4 border-emerald-500 flex flex-col items-center text-center group hover:-translate-y-1 transition">
+                <div class="w-12 h-12 bg-emerald-50 rounded-full flex items-center justify-center mb-3 group-hover:bg-emerald-100 transition text-emerald-600">
+                  ${iconSvg("clock","w-6 h-6")}
+                </div>
+                <h3 class="font-bold text-gray-900 text-lg">活動時間</h3>
+                <p class="text-gray-600 mt-1">民國115年 1月 24日 (六)</p>
+                <p class="text-emerald-600 font-medium">12:50 - 17:20</p>
+              </div>
+
+              <div class="bg-white p-6 rounded-xl shadow-lg border-t-4 border-emerald-500 flex flex-col items-center text-center group hover:-translate-y-1 transition">
+                <div class="w-12 h-12 bg-emerald-50 rounded-full flex items-center justify-center mb-3 group-hover:bg-emerald-100 transition text-emerald-600">
+                  ${iconSvg("mapPin","w-6 h-6")}
+                </div>
+                <h3 class="font-bold text-gray-900 text-lg">活動地點</h3>
+                <p class="text-gray-600 mt-1">奇美醫院 第五醫療大樓五樓</p>
+                <p class="text-gray-500 text-sm">(國際會議廳 / 線上同步)</p>
+              </div>
+
+              <div class="bg-white p-6 rounded-xl shadow-lg border-t-4 border-emerald-500 flex flex-col items-center text-center group hover:-translate-y-1 transition">
+                <div class="w-12 h-12 bg-emerald-50 rounded-full flex items-center justify-center mb-3 group-hover:bg-emerald-100 transition text-emerald-600">
+                  ${iconSvg("users","w-6 h-6")}
+                </div>
+                <h3 class="font-bold text-gray-900 text-lg">參與對象</h3>
+                <p class="text-gray-600 mt-1">營養師</p>
+                <p class="text-emerald-600 font-medium text-sm">含繼續教育學分</p>
+              </div>
+            </div>
+          </div>
+
+          <div class="max-w-4xl mx-auto px-4 py-16">
+            <div class="text-center mb-10">
+              <h2 class="text-2xl font-bold text-gray-800 flex items-center justify-center">
+                <span class="mr-2 text-emerald-600">${iconSvg("book","w-6 h-6")}</span> 課程議程表
+              </h2>
+              <div class="w-16 h-1 bg-emerald-500 mx-auto mt-4 rounded-full"></div>
+            </div>
+
+            <div class="bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden">
+              <div class="overflow-x-auto">
+                <table class="w-full text-left border-collapse">
+                  <thead>
+                    <tr class="bg-emerald-50 border-b border-emerald-100">
+                      <th class="p-4 font-bold text-emerald-800 w-1/4">時間</th>
+                      <th class="p-4 font-bold text-emerald-800 w-1/2">內容</th>
+                      <th class="p-4 font-bold text-emerald-800 w-1/4">主講</th>
+                    </tr>
+                  </thead>
+                  <tbody class="divide-y divide-gray-100">${agendaRows}</tbody>
+                </table>
+              </div>
+            </div>
+          </div>
+
+          <div class="bg-gray-800 text-gray-400 py-8 text-center text-sm px-4">
+            <p>主辦單位：國民營養調查團隊、台北醫學大學、台南市營養師公會</p>
+            <p class="mt-2">聯絡方式：Email: cjpeng2010@gmail.com</p>
+          </div>
+        </div>
+      `;
+    }
+
+    function successView() {
+      const fd = state.formData;
+      const classText = (fd.classType === 'physical') ? '實體 (奇美醫院)' : '線上 (Google Meet)';
+      return `
+        <div class="min-h-screen bg-gray-50 flex items-center justify-center p-4">
+          <div class="bg-white w-full max-w-lg p-8 rounded-2xl shadow-xl text-center border-t-8 border-emerald-500">
+            <div class="w-20 h-20 bg-emerald-100 rounded-full flex items-center justify-center mx-auto mb-6 text-emerald-600">
+              ${iconSvg("check","w-10 h-10")}
+            </div>
+            <h2 class="text-3xl font-bold text-gray-800 mb-2">報名成功</h2>
+            <p class="text-gray-500 mb-8">感謝您的參與，資料已成功寫入 Google Sheets。</p>
+
+            <div class="bg-emerald-50 p-6 rounded-xl text-left mb-8 space-y-3">
+              <div class="flex justify-between">
+                <span class="text-gray-500">報名者</span>
+                <span class="font-bold text-gray-800">${escapeHtml(fd.name)}</span>
+              </div>
+              <div class="flex justify-between">
+                <span class="text-gray-500">參加形式</span>
+                <span class="font-bold text-emerald-700">${escapeHtml(classText)}</span>
+              </div>
+              <div class="flex justify-between">
+                <span class="text-gray-500">報名時間</span>
+                <span class="font-mono text-gray-600 text-sm">${escapeHtml(state.timestamp)}</span>
+              </div>
+            </div>
+
+            <button data-action="reload"
+              class="w-full bg-emerald-600 text-white font-bold py-3 rounded-lg hover:bg-emerald-700 transition shadow-lg">
+              返回首頁
+            </button>
+          </div>
+        </div>
+      `;
+    }
+
+    function inputWrap(label, required, subLabel, fieldName, innerHtml) {
+      return `
+        <div class="mb-6">
+          <label class="block text-sm font-bold text-gray-800 mb-1.5">
+            ${escapeHtml(label)} ${required ? '<span class="text-red-500 ml-1">*</span>' : ''}
+          </label>
+          ${subLabel ? `<p class="text-xs text-gray-500 mb-2 leading-relaxed">${escapeHtml(subLabel)}</p>` : ''}
+          ${innerHtml}
+          ${errorLine(fieldName)}
+        </div>
+      `;
+    }
+
+    function formView() {
+      const fd = state.formData;
+      const step = state.currentStep;
+
+      const header = `
+        <div class="min-h-screen bg-emerald-50/50 py-6 px-4">
+          <div class="max-w-2xl mx-auto bg-white rounded-2xl shadow-xl overflow-hidden min-h-[700px] flex flex-col">
+            <div class="bg-emerald-900 p-6 text-white flex justify-between items-end shadow-md">
+              <div>
+                <p class="text-emerald-300 text-xs font-bold tracking-wider mb-1">ONLINE REGISTRATION</p>
+                <h2 class="text-2xl font-bold">報名表單</h2>
+              </div>
+              <button data-action="goLanding" class="text-emerald-200 text-sm hover:text-white underline decoration-emerald-500/50">
+                回簡章首頁
+              </button>
+            </div>
+
+            <div class="pt-12 pb-4">
+              ${stepWizardHtml(step, 4)}
+            </div>
+
+            <div class="flex-1 px-8 pb-10 overflow-y-auto">
+      `;
+
+      const footer = `
+            </div>
+
+            <div class="p-4 bg-white border-t border-gray-100 flex justify-between items-center shadow-[0_-4px_6px_-1px_rgba(0,0,0,0.05)] z-10">
+              ${step > 1
+                ? `<button data-action="prev" class="px-5 py-2.5 rounded-lg text-gray-600 font-bold hover:bg-gray-100 transition flex items-center ${state.isLoading ? 'opacity-60 cursor-not-allowed' : ''}">
+                    <span class="mr-1 text-gray-600">${iconSvg("chevronLeft","w-5 h-5")}</span> 上一步
+                  </button>`
+                : `<div></div>`
+              }
+
+              ${step < 4
+                ? `<button data-action="next" class="px-8 py-2.5 rounded-lg bg-emerald-600 text-white font-bold hover:bg-emerald-700 shadow-lg shadow-emerald-200 hover:shadow-xl transition transform">
+                    下一步 <span class="ml-1">${iconSvg("chevronRight","w-5 h-5")}</span>
+                  </button>`
+                : `<button data-action="submit" class="px-8 py-2.5 rounded-lg text-white font-bold shadow-lg hover:shadow-xl transition transform active:scale-95 flex items-center justify-center
+                    ${state.isLoading ? 'bg-gray-500 cursor-not-allowed' : 'bg-emerald-800 hover:bg-emerald-900'}" ${state.isLoading ? 'disabled' : ''}>
+                    ${state.isLoading ? `${iconSvg("loader","w-5 h-5")} <span class="ml-2">提交中...</span>` : `確認報名 <span class="ml-2">${iconSvg("shield","w-5 h-5")}</span>`}
+                  </button>`
+              }
+            </div>
+          </div>
+        </div>
+      `;
+
+      let content = "";
+
+      if (step === 1) {
+        content = `
+          <div class="animate-fade-in space-y-2">
+            ${inputWrap("姓名", true, null, "name", `
+              <input name="name" type="text" value="${escapeHtml(fd.name)}" placeholder="請輸入您的中文全名"
+                class="w-full p-3.5 bg-gray-50 border border-gray-200 rounded-lg focus:bg-white focus:ring-2 focus:ring-emerald-500 outline-none transition"/>
+            `)}
+
+            ${inputWrap("性別", true, null, "gender", `
+              <div class="grid grid-cols-2 gap-4">
+                ${["male","female"].map(g => {
+                  const active = fd.gender === g;
+                  return `
+                    <label class="border rounded-lg p-3 flex items-center justify-center cursor-pointer transition relative
+                      ${active ? 'bg-emerald-50 border-emerald-500 text-emerald-800 font-bold shadow-sm' : 'border-gray-200 hover:bg-gray-50 text-gray-600'}">
+                      <input type="radio" name="gender" value="${g}" ${active ? 'checked' : ''} class="absolute opacity-0"/>
+                      <div class="w-4 h-4 rounded-full border mr-2 flex items-center justify-center ${active ? 'border-emerald-600' : 'border-gray-400'}">
+                        ${active ? '<div class="w-2 h-2 bg-emerald-600 rounded-full"></div>' : ''}
+                      </div>
+                      ${g === 'male' ? '生理男性' : '生理女性'}
+                    </label>
+                  `;
+                }).join("")}
+              </div>
+            `)}
+
+            ${inputWrap("Email", true, "報名確認與線上連結將寄至此信箱", "email", `
+              <input name="email" type="email" value="${escapeHtml(fd.email)}" placeholder="name@example.com"
+                class="w-full p-3.5 bg-gray-50 border border-gray-200 rounded-lg focus:bg-white focus:ring-2 focus:ring-emerald-500 outline-none transition"/>
+            `)}
+
+            ${inputWrap("訊息來源", true, "請問您從何處得知此課程資訊？", "infoSource", `
+              <div class="relative">
+                <select name="infoSource"
+                  class="w-full p-3.5 bg-gray-50 border border-gray-200 rounded-lg appearance-none focus:bg-white focus:ring-2 focus:ring-emerald-500 outline-none cursor-pointer">
+                  <option value="" ${fd.infoSource ? "" : "selected"} disabled>請選擇一項來源</option>
+                  ${INFO_SOURCES.map(s => `<option value="${escapeHtml(s)}" ${fd.infoSource===s?'selected':''}>${escapeHtml(s)}</option>`).join("")}
+                </select>
+                <span class="absolute right-3 top-4 transform rotate-90 text-gray-400 pointer-events-none">${iconSvg("chevronRight","w-5 h-5")}</span>
+              </div>
+            `)}
+          </div>
+        `;
+      }
+
+      if (step === 2) {
+        content = `
+          <div class="animate-fade-in space-y-2">
+            ${inputWrap("身分證字號", true, "學分登錄專用，資料將加密保護", "idNumber", `
+              <div class="relative">
+                <input name="idNumber" type="${state.showId ? 'text' : 'password'}" value="${escapeHtml(fd.idNumber)}" maxlength="10" placeholder="A123456789"
+                  class="w-full p-3.5 bg-gray-50 border border-gray-200 rounded-lg focus:bg-white focus:ring-2 focus:ring-emerald-500 outline-none transition font-mono tracking-widest uppercase"/>
+                <button type="button" data-action="toggleId" class="absolute right-3 top-3.5 text-gray-400 hover:text-emerald-600">
+                  ${state.showId ? iconSvg("eyeOff","w-5 h-5") : iconSvg("eye","w-5 h-5")}
+                </button>
+              </div>
+            `)}
+
+            ${inputWrap("台南市營養師公會會員", true, null, "isMember", `
+              <div class="flex gap-4">
+                ${["yes","no"].map(opt => {
+                  const active = fd.isMember === opt;
+                  return `
+                    <label class="flex-1 border rounded-lg p-3 text-center cursor-pointer transition
+                      ${active ? 'bg-emerald-600 text-white border-emerald-600 shadow-md' : 'bg-white text-gray-600 hover:bg-gray-50'}">
+                      <input type="radio" name="isMember" value="${opt}" ${active ? 'checked' : ''} class="hidden"/>
+                      ${opt === 'yes' ? '是，我是會員' : '否，非會員'}
+                    </label>
+                  `;
+                }).join("")}
+              </div>
+            `)}
+
+            ${inputWrap("居住縣市", true, null, "city", `
+              <div class="relative">
+                <select name="city"
+                  class="w-full p-3.5 bg-gray-50 border border-gray-200 rounded-lg appearance-none focus:bg-white focus:ring-2 focus:ring-emerald-500 outline-none cursor-pointer">
+                  <option value="" ${fd.city ? "" : "selected"} disabled>請選擇您的居住縣市</option>
+                  ${CITIES.map(c => `<option value="${escapeHtml(c)}" ${fd.city===c?'selected':''}>${escapeHtml(c)}</option>`).join("")}
+                </select>
+                <span class="absolute right-3 top-4 transform rotate-90 text-gray-400 pointer-events-none">${iconSvg("chevronRight","w-5 h-5")}</span>
+              </div>
+            `)}
+          </div>
+        `;
+      }
+
+      if (step === 3) {
+        content = `
+          <div class="animate-fade-in space-y-2">
+            ${inputWrap("國民營養調查參與經驗", true, null, "participated2016NutriSurvey", `
+              <p class="text-sm text-gray-600 mb-3 font-semibold">請問您是否曾經報名參與國民營養調查？</p>
+              <div class="flex gap-4">
+                ${["yes","no"].map(opt => {
+                  const active = fd.participated2016NutriSurvey === opt;
+                  return `
+                    <label class="flex-1 border rounded-lg p-3 text-center cursor-pointer transition
+                      ${active ? 'bg-emerald-600 text-white border-emerald-600 shadow-md' : 'bg-white text-gray-600 hover:bg-gray-50'}">
+                      <input type="radio" name="participated2016NutriSurvey" value="${opt}" ${active ? 'checked' : ''} class="hidden"/>
+                      ${opt === 'yes' ? '是' : '否'}
+                    </label>
+                  `;
+                }).join("")}
+              </div>
+            `)}
+
+            ${inputWrap("選擇上課方式", true, null, "classType", `
+              <div class="space-y-3">
+                ${(() => {
+                  const physicalActive = fd.classType === 'physical';
+                  const onlineActive = fd.classType === 'online';
+                  return `
+                    <label class="block border-2 rounded-xl p-4 cursor-pointer transition relative group overflow-hidden
+                      ${physicalActive ? 'border-emerald-500 bg-emerald-50/50' : 'border-gray-200 hover:border-emerald-300'}">
+                      <input type="radio" name="classType" value="physical" ${physicalActive?'checked':''} class="hidden"/>
+                      <div class="flex items-start">
+                        <div class="w-5 h-5 mt-1 rounded-full border-2 mr-3 flex items-center justify-center flex-shrink-0 ${physicalActive?'border-emerald-600':'border-gray-300'}">
+                          ${physicalActive?'<div class="w-2.5 h-2.5 bg-emerald-600 rounded-full"></div>':''}
+                        </div>
+                        <div>
+                          <span class="font-bold text-gray-900 block text-lg">實體課程</span>
+                          <span class="text-sm text-gray-500 flex items-center mt-1">
+                            <span class="mr-1 text-gray-500">${iconSvg("mapPin","w-4 h-4")}</span> 奇美醫院 第五醫療大樓五樓 國際會議廳
+                          </span>
+                        </div>
+                      </div>
+                    </label>
+
+                    <label class="block border-2 rounded-xl p-4 cursor-pointer transition relative group overflow-hidden
+                      ${onlineActive ? 'border-emerald-500 bg-emerald-50/50' : 'border-gray-200 hover:border-emerald-300'}">
+                      <input type="radio" name="classType" value="online" ${onlineActive?'checked':''} class="hidden"/>
+                      <div class="flex items-start">
+                        <div class="w-5 h-5 mt-1 rounded-full border-2 mr-3 flex items-center justify-center flex-shrink-0 ${onlineActive?'border-emerald-600':'border-gray-300'}">
+                          ${onlineActive?'<div class="w-2.5 h-2.5 bg-emerald-600 rounded-full"></div>':''}
+                        </div>
+                        <div>
+                          <span class="font-bold text-gray-900 block text-lg">線上同步 (Google Meet)</span>
+                          <span class="text-sm text-gray-500 flex items-center mt-1">
+                            <span class="mr-1 text-gray-500">${iconSvg("monitor","w-4 h-4")}</span> 連結將於報名成功後寄發
+                          </span>
+                        </div>
+                      </div>
+                    </label>
+                  `;
+                })()}
+              </div>
+            `)}
+
+            ${inputWrap("工作經驗 (可複選)", true, null, "workExperience", `
+              <div class="grid grid-cols-2 gap-3">
+                ${WORK_TYPES.map(type => {
+                  const checked = (fd.workExperience || []).includes(type.id);
+                  return `
+                    <label class="flex items-center p-3 rounded-lg border cursor-pointer transition
+                      ${checked ? 'bg-emerald-50 border-emerald-500 text-emerald-800' : 'border-gray-200 hover:bg-gray-50'}">
+                      <div class="w-5 h-5 rounded border-2 mr-3 flex items-center justify-center flex-shrink-0
+                        ${checked ? 'bg-emerald-600 border-emerald-600' : 'border-gray-300 bg-white'}">
+                        ${checked ? `<span class="text-white">${iconSvg("check","w-4 h-4")}</span>` : ''}
+                      </div>
+                      <span class="text-sm font-medium">${escapeHtml(type.label)}</span>
+                      <input type="checkbox" name="workExperience" value="${escapeHtml(type.id)}" ${checked?'checked':''} class="hidden"/>
+                    </label>
+                  `;
+                }).join("")}
+              </div>
+            `)}
+
+            ${inputWrap("目前執業場所", true, null, "workplace", `
+              <input name="workplace" type="text" value="${escapeHtml(fd.workplace)}" placeholder="例：OO醫院、XX診所"
+                class="w-full p-3.5 bg-gray-50 border border-gray-200 rounded-lg focus:bg-white focus:ring-2 focus:ring-emerald-500 outline-none transition"/>
+            `)}
+          </div>
+        `;
+      }
+
+      if (step === 4) {
+        content = `
+          <div class="animate-fade-in">
+            <div class="bg-orange-50 border-l-4 border-orange-400 p-4 mb-6">
+              <div class="flex">
+                <div class="flex-shrink-0 text-orange-400">${iconSvg("alert","w-5 h-5")}</div>
+                <div class="ml-3">
+                  <p class="text-sm text-orange-700">請確認您填寫的資料無誤，送出後將無法自行修改。</p>
+                </div>
+              </div>
+            </div>
+
+            <div class="bg-gray-50 p-5 rounded-xl border border-gray-200 text-sm text-gray-600 mb-6 shadow-inner">
+              <h4 class="font-bold text-gray-800 mb-2">最終確認</h4>
+              <p class="text-gray-500">
+                請仔細核對所有報名資訊，特別是姓名、身分證字號 (學分登錄用) 及 Email。
+              </p>
+            </div>
+
+            <label class="flex p-4 rounded-xl border-2 cursor-pointer transition ${fd.consent ? 'border-emerald-500 bg-emerald-50' : 'border-gray-200 hover:bg-gray-50'}">
+              <div class="flex items-start">
+                <div class="w-6 h-6 rounded border-2 mr-3 flex items-center justify-center flex-shrink-0 mt-0.5
+                  ${fd.consent ? 'bg-emerald-600 border-emerald-600' : 'border-gray-300 bg-white'}">
+                  ${fd.consent ? `<span class="text-white">${iconSvg("check","w-4 h-4")}</span>` : ''}
+                </div>
+                <div>
+                  <input type="checkbox" name="consent" ${fd.consent ? 'checked' : ''} class="hidden"/>
+                  <span class="font-bold text-gray-900">我已確認所有資訊無誤</span>
+                  <p class="text-sm text-gray-500 mt-1">勾選即代表同意送出報名表單。</p>
+                </div>
+              </div>
+            </label>
+            ${errorLine("consent")}
+
+            ${state.submitError ? `
+              <div class="mt-4 p-3 bg-red-100 border border-red-300 text-red-700 rounded-lg flex items-center">
+                <span class="mr-2 flex-shrink-0">${iconSvg("alert","w-4 h-4")}</span>
+                <span class="text-sm">${escapeHtml(state.submitError)}</span>
+              </div>
+            ` : ""}
+          </div>
+        `;
+      }
+
+      return header + content + footer;
+    }
+
+    /***********************
+     * Render
+     ***********************/
+    function render() {
+      const app = document.getElementById("app");
+      if (!app) return;
+
+      let html = "";
+      if (state.currentStep === 0) html = landingView();
+      else if (state.currentStep === 5) html = successView();
+      else html = formView();
+
+      app.innerHTML = html;
+    }
+
+    /***********************
+     * Init
+     ***********************/
+    function init() {
+      state.timestamp = new Date().toLocaleString('zh-TW', { timeZone: 'Asia/Taipei' });
+
+      document.addEventListener("click", onClick);
+      document.addEventListener("input", onInput);
+      document.addEventListener("change", onChange);
+
+      render();
+    }
+
+    init();
+  </script>
+</body>
+</html>
