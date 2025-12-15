@@ -99,6 +99,24 @@
       }
     };
 
+    // Render scheduling + selection preservation
+    let renderScheduled = false;
+    let pendingSelection = null;
+
+    function scheduleRender() {
+      if (renderScheduled) return;
+      renderScheduled = true;
+      requestAnimationFrame(() => {
+        render();
+        // restore caret/focus if requested by last input
+        if (pendingSelection && pendingSelection.name) {
+          restoreSelectionByName(pendingSelection.name, pendingSelection.sel);
+          pendingSelection = null;
+        }
+        renderScheduled = false;
+      });
+    }
+
     /***********************
      * Utilities
      ***********************/
@@ -106,7 +124,7 @@
 
     function setState(patch) {
       state = { ...state, ...patch };
-      render();
+      scheduleRender();
     }
 
     function scrollTop() { window.scrollTo({ top: 0, behavior: "smooth" }); }
@@ -171,7 +189,7 @@
       }
 
       state.errors = newErrors;
-      render();
+      scheduleRender();
       return Object.keys(newErrors).length === 0;
     }
 
@@ -244,9 +262,10 @@
     function restoreSelectionByName(fieldName, sel) {
       if (!sel) return;
       try {
-        // escape double quotes in fieldName for querySelector
-        const safeName = fieldName.replace(/"/g, '\\"');
-        const newEl = document.querySelector(`[name="${safeName}"]`);
+        // use getElementsByName to be resilient to special characters
+        const els = document.getElementsByName(fieldName);
+        if (!els || els.length === 0) return;
+        const newEl = els[0];
         if (!newEl) return;
         if (newEl.setSelectionRange && typeof sel.start === 'number' && typeof sel.end === 'number') {
           newEl.focus();
@@ -296,7 +315,7 @@
       // checkbox consent (special handling)
       if (el.type === "checkbox" && name === "consent") {
         state.formData.consent = el.checked;
-        render();
+        scheduleRender();
         // consent is checkbox -> no selection to restore
         return;
       }
@@ -305,23 +324,23 @@
       if (name === "idNumber") {
         const newVal = el.value.toUpperCase();
         state.formData.idNumber = newVal;
-        // render and restore selection
-        render();
-        restoreSelectionByName(name, sel);
+        // schedule render and restore selection after render
+        if (isTextLike) pendingSelection = { name, sel };
+        scheduleRender();
         return;
       }
 
       // normal text-like inputs
       if (isTextLike) {
         state.formData[name] = el.value;
-        render();
-        restoreSelectionByName(name, sel);
+        if (isTextLike) pendingSelection = { name, sel };
+        scheduleRender();
         return;
       }
 
       // other inputs (e.g., radios where input event may occur)
       state.formData[name] = el.value;
-      render();
+      scheduleRender();
     }
 
     function onChange(e) {
@@ -341,7 +360,7 @@
           state.errors = nextErr;
         }
 
-        render();
+        scheduleRender();
         return;
       }
 
@@ -357,7 +376,7 @@
           delete nextErr[name];
           state.errors = nextErr;
         }
-        render();
+        scheduleRender();
         return;
       }
 
@@ -369,7 +388,7 @@
           delete nextErr[name];
           state.errors = nextErr;
         }
-        render();
+        scheduleRender();
         return;
       }
     }
@@ -385,13 +404,13 @@
         case "check": return `<svg ${common} viewBox="0 0 24 24"><path d="M20 6L9 17l-5-5" /></svg>`;
         case "clock": return `<svg ${common} viewBox="0 0 24 24"><circle cx="12" cy="12" r="10"/><path d="M12 6v6l4 2"/></svg>`;
         case "mapPin": return `<svg ${common} viewBox="0 0 24 24"><path d="M21 10c0 7-9 13-9 13S3 17 3 10a9 9 0 1 1 18 0Z"/><circle cx="12" cy="10" r="3"/></svg>`;
-        case "users": return `<svg ${common} viewBox="0 0 24 24"><path d="M17 21v-2a4 4 0 0 0-4-4H7a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13A4 4 0 0 1 20 7"/></svg>`;
+        case "users": return `<svg ${common} viewBox="0 0 24 24"><path d="M17 21v-2a4 4 0 0 0-4-4H7a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.[...]
         case "monitor": return `<svg ${common} viewBox="0 0 24 24"><rect x="2" y="3" width="20" height="14" rx="2"/><path d="M8 21h8"/><path d="M12 17v4"/></svg>`;
         case "alert": return `<svg ${common} viewBox="0 0 24 24"><circle cx="12" cy="12" r="10"/><path d="M12 8v4"/><path d="M12 16h.01"/></svg>`;
         case "book": return `<svg ${common} viewBox="0 0 24 24"><path d="M3 5a2 2 0 0 1 2-2h13v16H5a2 2 0 0 1-2-2V5z"/><path d="M7 7h8"/></svg>`;
         case "eye": return `<svg ${common} viewBox="0 0 24 24"><path d="M2 12s3-7 10-7 10 7 10 7-3 7-10 7S2 12 2 12z"/><circle cx="12" cy="12" r="3"/></svg>`;
         case "eyeOff": return `<svg ${common} viewBox="0 0 24 24"><path d="M17.94 17.94A10.07 10.07 0 0 1 12 19c-7 0-10-7-10-7a18.35 18.35 0 0 1 3.3-4.79"/><path d="M1 1l22 22"/></svg>`;
-        case "loader": return `<svg class="${cls} animate-spin" viewBox="0 0 24 24" fill="none"><circle cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4" opacity="0.25"/><path d="M22 12a10 10 0 0 1-10 10" stroke="currentColor" stroke-width="4" stroke-linecap="round"/></svg>`;
+        case "loader": return `<svg class="${cls} animate-spin" viewBox="0 0 24 24" fill="none"><circle cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4" opacity="0.25"/><path d="M22 12a10[...]
         case "shield": return `<svg ${common} viewBox="0 0 24 24"><path d="M12 2l7 3v6c0 5-3.58 9.74-7 11-3.42-1.26-7-6-7-11V5l7-3z"/><path d="M9 12l2 2 4-4"/></svg>`;
         default: return "";
       }
@@ -441,7 +460,7 @@
           src="${FLYER_IMAGE_SRC}"
           alt="講座簡章"
           class="w-full h-full object-contain"
-          onerror="this.onerror=null; this.src='data:image/svg+xml;utf8,<svg xmlns=%22http://www.w3.org/2000/svg%22 width=%22600%22 height=%22800%22><rect width=%22100%25%22 height=%22100%25%22 fill=%22%23e6f9f0%22/><text x=%2230%22 y=%2240%22 font-size=%2220%22 fill=%22%2380bfa6%22>講章圖檔未載入</text></svg>'"
+          onerror="this.onerror=null; this.src='data:image/svg+xml;utf8,<svg xmlns=%22http://www.w3.org/2000/svg%22 width=%22600%22 height=%22800%22><rect width=%22100%25%22 height=%22100%25%22 fill=%[...]
         />
       `;
 
@@ -631,9 +650,9 @@
       const footer = `
             </div>
 
-            <div class="p-4 bg-white border-t border-gray-100 flex justify-between items-center shadow-[0_-4px_6px_-1px_rgba(0,0,0,0.05)] z-10">
+            <div class="p-4 bg-white border-t border-gray-100:flex justify-between items-center shadow-[0_-4px_6px_-1px_rgba(0,0,0,0.05)] z-10">
               ${step > 1
-                ? `<button data-action="prev" class="px-5 py-2.5 rounded-lg text-gray-600 font-bold hover:bg-gray-100 transition flex items-center ${state.isLoading ? 'opacity-60 cursor-not-allowed' : ''}">
+                ? `<button data-action="prev" class="px-5 py-2.5 rounded-lg text-gray-600 font-bold hover:bg-gray-100 transition flex items-center ${state.isLoading ? 'opacity-60 cursor-not-allowed' :''}">
                     <span class="mr-1 text-gray-600">${iconSvg("chevronLeft","w-5 h-5")}</span> 上一步
                   </button>`
                 : `<div></div>`
@@ -902,6 +921,7 @@
       document.addEventListener("input", onInput);
       document.addEventListener("change", onChange);
 
+      // initial render directly
       render();
     }
 
